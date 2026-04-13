@@ -79,6 +79,7 @@ def process_meetings(meetings):
                 "meeting_title": meeting.get("meeting_title"),
                 "meeting_transcript": format_transcript(meeting.get("transcript")),
                 "meeting_summary": meeting.get("default_summary", {}).get("markdown_formatted") if meeting.get("default_summary") else None,
+                "invitees": ", ".join(i.get("name") for i in meeting.get("calendar_invitees", [])),
             }
 
             print(f"  → {meeting['meeting_title']} | {invitee['email']}")
