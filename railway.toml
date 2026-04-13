@@ -1,0 +1,3 @@
+[deploy]
+cronSchedule = "*/15 * * * *"
+startCommand = "python send_webhooks.py"
