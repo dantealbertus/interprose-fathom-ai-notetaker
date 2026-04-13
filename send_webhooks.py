@@ -5,7 +5,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-FATHOM_API_KEY = os.environ["FATHOM_API_KEY"]
+FATHOM_API_KEY = os.environ["FATHOM_API_KEY_GREG"]
 WEBHOOK_URL = os.environ["MAKE_WEBHOOK_URL"]
 FATHOM_API_URL = "https://api.fathom.ai/external/v1/meetings"
 STATE_FILE = Path(__file__).parent / "state.json"
