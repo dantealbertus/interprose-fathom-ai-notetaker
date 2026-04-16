@@ -51,10 +51,13 @@ def fetch_new_meetings(created_after):
     return meetings
 
 
-def format_transcript(transcript):
+def format_transcript(transcript, max_chars=50000):
     if not transcript:
         return None
-    return "\n".join(f"[{t['timestamp']}] {t['speaker']['display_name']}: {t['text']}" for t in transcript)
+    formatted = "\n".join(f"[{t['timestamp']}] {t['speaker']['display_name']}: {t['text']}" for t in transcript)
+    if len(formatted) > max_chars:
+        formatted = formatted[:max_chars] + "\n... [transcript truncated]"
+    return formatted
 
 
 def send_webhook(payload):
