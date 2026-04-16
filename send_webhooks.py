@@ -3,26 +3,30 @@ import json
 import time
 import os
 from datetime import datetime, timezone
-from pathlib import Path
+
+import redis
 
 FATHOM_API_KEY = os.environ["FATHOM_API_KEY_GREG"]
+FATHOM_ACCOUNT = os.environ.get("FATHOM_ACCOUNT", "greg")
 WEBHOOK_URL = os.environ["MAKE_WEBHOOK_URL"]
 FATHOM_API_URL = "https://api.fathom.ai/external/v1/meetings"
-STATE_FILE = Path(__file__).parent / "state.json"
+REDIS_KEY = f"fathom:last_processed_at:{FATHOM_ACCOUNT}"
+
+redis_client = redis.from_url(os.environ["REDIS_URL"])
 
 
 def load_state():
-    if STATE_FILE.exists():
-        return json.loads(STATE_FILE.read_text())
+    value = redis_client.get(REDIS_KEY)
+    if value:
+        return {"last_processed_at": value.decode()}
     # Eerste keer: sla huidige tijd op als startpunt, verwerk geen oude meetings
     now = datetime.now(timezone.utc).isoformat()
-    state = {"last_processed_at": now}
-    save_state(state)
-    return state
+    save_state({"last_processed_at": now})
+    return {"last_processed_at": now}
 
 
 def save_state(state):
-    STATE_FILE.write_text(json.dumps(state, indent=2))
+    redis_client.set(REDIS_KEY, state["last_processed_at"])
 
 
 def fetch_new_meetings(created_after):
@@ -51,13 +55,10 @@ def fetch_new_meetings(created_after):
     return meetings
 
 
-def format_transcript(transcript, max_chars=50000):
+def format_transcript(transcript):
     if not transcript:
         return None
-    formatted = "\n".join(f"[{t['timestamp']}] {t['speaker']['display_name']}: {t['text']}" for t in transcript)
-    if len(formatted) > max_chars:
-        formatted = formatted[:max_chars] + "\n... [transcript truncated]"
-    return formatted
+    return "\n".join(f"[{t['timestamp']}] {t['speaker']['display_name']}: {t['text']}" for t in transcript)
 
 
 def send_webhook(payload):
@@ -74,6 +75,7 @@ def process_meetings(meetings):
 
         for invitee in invitees:
             payload = {
+                "account": FATHOM_ACCOUNT,
                 "meeting_datetime": meeting.get("recording_start_time"),
                 "recording_id": meeting.get("recording_id"),
                 "share_url": meeting.get("share_url"),
