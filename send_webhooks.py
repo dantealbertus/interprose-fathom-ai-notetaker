@@ -29,7 +29,7 @@ def save_state(state):
     redis_client.set(REDIS_KEY, state["last_processed_at"])
 
 
-def fetch_new_meetings(created_after, retries=3, backoff=5):
+def fetch_new_meetings(created_after, retries=3, backoff=10):
     meetings = []
     cursor = None
 
@@ -49,8 +49,9 @@ def fetch_new_meetings(created_after, retries=3, backoff=5):
                 break
             except requests.HTTPError as e:
                 if attempt < retries - 1 and response.status_code in (502, 503, 504):
-                    print(f"Tijdelijke fout ({response.status_code}), opnieuw proberen in {backoff}s...")
-                    time.sleep(backoff)
+                    wait = backoff * (2 ** attempt)
+                    print(f"Tijdelijke fout ({response.status_code}), opnieuw proberen in {wait}s...")
+                    time.sleep(wait)
                 else:
                     raise
 
