@@ -29,7 +29,7 @@ def save_state(state):
     redis_client.set(REDIS_KEY, state["last_processed_at"])
 
 
-def fetch_new_meetings(created_after):
+def fetch_new_meetings(created_after, retries=3, backoff=5):
     meetings = []
     cursor = None
 
@@ -38,14 +38,23 @@ def fetch_new_meetings(created_after):
         if cursor:
             params["cursor"] = cursor
 
-        response = requests.get(
-            FATHOM_API_URL,
-            headers={"X-Api-Key": FATHOM_API_KEY},
-            params=params,
-        )
-        response.raise_for_status()
-        data = response.json()
+        for attempt in range(retries):
+            try:
+                response = requests.get(
+                    FATHOM_API_URL,
+                    headers={"X-Api-Key": FATHOM_API_KEY},
+                    params=params,
+                )
+                response.raise_for_status()
+                break
+            except requests.HTTPError as e:
+                if attempt < retries - 1 and response.status_code in (502, 503, 504):
+                    print(f"Tijdelijke fout ({response.status_code}), opnieuw proberen in {backoff}s...")
+                    time.sleep(backoff)
+                else:
+                    raise
 
+        data = response.json()
         meetings.extend(data["items"])
         cursor = data.get("next_cursor")
 
