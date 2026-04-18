@@ -100,28 +100,25 @@ def process_meetings(meetings):
             print(f"  Overgeslagen (duplicaat): {meeting['meeting_title']} ({recording_id})")
             continue
 
-        invitees = meeting.get("calendar_invitees", [])
+        payload = {
+            "account": FATHOM_ACCOUNT,
+            "meeting_datetime": meeting.get("recording_start_time"),
+            "recording_id": recording_id,
+            "share_url": meeting.get("share_url"),
+            "meeting_title": meeting.get("meeting_title"),
+            "meeting_transcript": format_transcript(meeting.get("transcript")),
+            "meeting_summary": meeting.get("default_summary", {}).get("markdown_formatted") if meeting.get("default_summary") else None,
+            "invitees": [
+                {"name": i.get("name"), "email": i.get("email")}
+                for i in meeting.get("calendar_invitees", [])
+            ],
+        }
 
-        for invitee in invitees:
-            payload = {
-                "account": FATHOM_ACCOUNT,
-                "meeting_datetime": meeting.get("recording_start_time"),
-                "recording_id": recording_id,
-                "share_url": meeting.get("share_url"),
-                "invitee_name": invitee.get("name"),
-                "invitee_email": invitee.get("email"),
-                "meeting_title": meeting.get("meeting_title"),
-                "meeting_transcript": format_transcript(meeting.get("transcript")),
-                "meeting_summary": meeting.get("default_summary", {}).get("markdown_formatted") if meeting.get("default_summary") else None,
-                "invitees": ", ".join(i.get("name") for i in meeting.get("calendar_invitees", [])),
-            }
-
-            print(f"  → {meeting['meeting_title']} | {invitee['email']}")
-            send_webhook(payload)
-            total_sent += 1
-            time.sleep(0.2)
-
+        print(f"  → {meeting['meeting_title']} ({len(payload['invitees'])} invitees)")
+        send_webhook(payload)
         mark_as_processed(recording_id)
+        total_sent += 1
+        time.sleep(0.2)
 
     return total_sent
 
