@@ -15,6 +15,9 @@ REDIS_KEY = f"fathom:last_processed_at:{FATHOM_ACCOUNT}"
 redis_client = redis.from_url(os.environ["REDIS_URL"])
 
 
+PROCESSED_IDS_KEY = f"fathom:processed_ids:{FATHOM_ACCOUNT}"
+
+
 def load_state():
     value = redis_client.get(REDIS_KEY)
     if value:
@@ -27,6 +30,14 @@ def load_state():
 
 def save_state(state):
     redis_client.set(REDIS_KEY, state["last_processed_at"])
+
+
+def is_already_processed(recording_id):
+    return redis_client.sismember(PROCESSED_IDS_KEY, str(recording_id))
+
+
+def mark_as_processed(recording_id):
+    redis_client.sadd(PROCESSED_IDS_KEY, str(recording_id))
 
 
 def fetch_new_meetings(created_after, retries=3, backoff=10):
@@ -83,13 +94,19 @@ def process_meetings(meetings):
     total_sent = 0
 
     for meeting in meetings:
+        recording_id = meeting.get("recording_id")
+
+        if is_already_processed(recording_id):
+            print(f"  Overgeslagen (duplicaat): {meeting['meeting_title']} ({recording_id})")
+            continue
+
         invitees = meeting.get("calendar_invitees", [])
 
         for invitee in invitees:
             payload = {
                 "account": FATHOM_ACCOUNT,
                 "meeting_datetime": meeting.get("recording_start_time"),
-                "recording_id": meeting.get("recording_id"),
+                "recording_id": recording_id,
                 "share_url": meeting.get("share_url"),
                 "invitee_name": invitee.get("name"),
                 "invitee_email": invitee.get("email"),
@@ -103,6 +120,8 @@ def process_meetings(meetings):
             send_webhook(payload)
             total_sent += 1
             time.sleep(0.2)
+
+        mark_as_processed(recording_id)
 
     return total_sent
 
