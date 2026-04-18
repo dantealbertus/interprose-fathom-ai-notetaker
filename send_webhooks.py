@@ -73,6 +73,8 @@ def format_transcript(transcript):
 
 def send_webhook(payload):
     response = requests.post(WEBHOOK_URL, json=payload)
+    if not response.ok:
+        print(f"Webhook fout {response.status_code}: {response.text}")
     response.raise_for_status()
     return response
 
