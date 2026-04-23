@@ -100,6 +100,11 @@ def process_meetings(meetings):
             print(f"  Overgeslagen (duplicaat): {meeting['meeting_title']} ({recording_id})")
             continue
 
+        if meeting.get("calendar_invitees_domains_type") == "only_internal":
+            print(f"  Overgeslagen (intern): {meeting['meeting_title']}")
+            mark_as_processed(recording_id)
+            continue
+
         payload = {
             "account": FATHOM_ACCOUNT,
             "meeting_datetime": meeting.get("recording_start_time"),
