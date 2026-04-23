@@ -6,41 +6,47 @@ from datetime import datetime, timezone
 
 import redis
 
-FATHOM_API_KEY = os.environ["FATHOM_API_KEY_GREG"]
-FATHOM_ACCOUNT = os.environ.get("FATHOM_ACCOUNT", "greg")
 WEBHOOK_URL = os.environ["MAKE_WEBHOOK_URL"]
 FATHOM_API_URL = "https://api.fathom.ai/external/v1/meetings"
-REDIS_KEY = f"fathom:last_processed_at:{FATHOM_ACCOUNT}"
 
 redis_client = redis.from_url(os.environ["REDIS_URL"])
 
 
-PROCESSED_IDS_KEY = f"fathom:processed_ids:{FATHOM_ACCOUNT}"
+def get_accounts():
+    accounts = os.environ.get("FATHOM_ACCOUNTS", "greg")
+    return [a.strip() for a in accounts.split(",")]
 
 
-def load_state():
-    value = redis_client.get(REDIS_KEY)
+def get_api_key(account):
+    return os.environ[f"FATHOM_API_KEY_{account.upper()}"]
+
+
+def load_state(account):
+    key = f"fathom:last_processed_at:{account}"
+    value = redis_client.get(key)
     if value:
         return {"last_processed_at": value.decode()}
-    # Eerste keer: sla huidige tijd op als startpunt, verwerk geen oude meetings
     now = datetime.now(timezone.utc).isoformat()
-    save_state({"last_processed_at": now})
+    save_state(account, {"last_processed_at": now})
     return {"last_processed_at": now}
 
 
-def save_state(state):
-    redis_client.set(REDIS_KEY, state["last_processed_at"])
+def save_state(account, state):
+    key = f"fathom:last_processed_at:{account}"
+    redis_client.set(key, state["last_processed_at"])
 
 
-def is_already_processed(recording_id):
-    return redis_client.sismember(PROCESSED_IDS_KEY, str(recording_id))
+def is_already_processed(account, recording_id):
+    key = f"fathom:processed_ids:{account}"
+    return redis_client.sismember(key, str(recording_id))
 
 
-def mark_as_processed(recording_id):
-    redis_client.sadd(PROCESSED_IDS_KEY, str(recording_id))
+def mark_as_processed(account, recording_id):
+    key = f"fathom:processed_ids:{account}"
+    redis_client.sadd(key, str(recording_id))
 
 
-def fetch_new_meetings(created_after, retries=3, backoff=10):
+def fetch_new_meetings(api_key, created_after, retries=3, backoff=10):
     meetings = []
     cursor = None
 
@@ -53,7 +59,7 @@ def fetch_new_meetings(created_after, retries=3, backoff=10):
             try:
                 response = requests.get(
                     FATHOM_API_URL,
-                    headers={"X-Api-Key": FATHOM_API_KEY},
+                    headers={"X-Api-Key": api_key},
                     params=params,
                 )
                 response.raise_for_status()
@@ -90,23 +96,23 @@ def send_webhook(payload):
     return response
 
 
-def process_meetings(meetings):
+def process_meetings(account, meetings):
     total_sent = 0
 
     for meeting in meetings:
         recording_id = meeting.get("recording_id")
 
-        if is_already_processed(recording_id):
+        if is_already_processed(account, recording_id):
             print(f"  Overgeslagen (duplicaat): {meeting['meeting_title']} ({recording_id})")
             continue
 
         if meeting.get("calendar_invitees_domains_type") == "only_internal":
             print(f"  Overgeslagen (intern): {meeting['meeting_title']}")
-            mark_as_processed(recording_id)
+            mark_as_processed(account, recording_id)
             continue
 
         payload = {
-            "account": FATHOM_ACCOUNT,
+            "account": account,
             "meeting_datetime": meeting.get("recording_start_time"),
             "recording_id": recording_id,
             "share_url": meeting.get("share_url"),
@@ -121,7 +127,7 @@ def process_meetings(meetings):
 
         print(f"  → {meeting['meeting_title']} ({len(payload['invitees'])} invitees)")
         send_webhook(payload)
-        mark_as_processed(recording_id)
+        mark_as_processed(account, recording_id)
         total_sent += 1
         time.sleep(0.2)
 
@@ -129,21 +135,28 @@ def process_meetings(meetings):
 
 
 if __name__ == "__main__":
-    state = load_state()
-    last_processed_at = state["last_processed_at"]
+    accounts = get_accounts()
+    print(f"Accounts: {', '.join(accounts)}\n")
 
-    print(f"Nieuwe meetings ophalen vanaf: {last_processed_at}")
-    meetings = fetch_new_meetings(created_after=last_processed_at)
+    for account in accounts:
+        print(f"[{account}] Meetings ophalen...")
+        api_key = get_api_key(account)
+        state = load_state(account)
+        last_processed_at = state["last_processed_at"]
 
-    if not meetings:
-        print("Geen nieuwe meetings gevonden.")
-    else:
-        print(f"{len(meetings)} nieuwe meeting(s) gevonden.\n")
-        total = process_meetings(meetings)
-        print(f"\n{total} webhooks verstuurd.")
+        print(f"[{account}] Ophalen vanaf: {last_processed_at}")
+        meetings = fetch_new_meetings(api_key, created_after=last_processed_at)
 
-        # Sla de created_at van de nieuwste meeting op als nieuw startpunt
-        latest = max(meetings, key=lambda m: m["created_at"])
-        state["last_processed_at"] = latest["created_at"]
-        save_state(state)
-        print(f"State bijgewerkt naar: {state['last_processed_at']}")
+        if not meetings:
+            print(f"[{account}] Geen nieuwe meetings gevonden.")
+        else:
+            print(f"[{account}] {len(meetings)} nieuwe meeting(s) gevonden.")
+            total = process_meetings(account, meetings)
+            print(f"[{account}] {total} webhooks verstuurd.")
+
+            latest = max(meetings, key=lambda m: m["created_at"])
+            state["last_processed_at"] = latest["created_at"]
+            save_state(account, state)
+            print(f"[{account}] State bijgewerkt naar: {state['last_processed_at']}")
+
+        print()
