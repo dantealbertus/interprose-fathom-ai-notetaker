@@ -125,10 +125,13 @@ def process_meetings(account, meetings):
             ],
         }
 
-        print(f"  → {meeting['meeting_title']} ({len(payload['invitees'])} invitees)")
-        send_webhook(payload)
         mark_as_processed(account, recording_id)
-        total_sent += 1
+        print(f"  → {meeting['meeting_title']} ({len(payload['invitees'])} invitees)")
+        try:
+            send_webhook(payload)
+            total_sent += 1
+        except Exception as e:
+            print(f"  Webhook mislukt, overgeslagen: {e}")
         time.sleep(0.2)
 
     return total_sent
