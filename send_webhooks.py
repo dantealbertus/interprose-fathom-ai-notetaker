@@ -37,13 +37,11 @@ def save_state(account, state):
 
 
 def is_already_processed(account, recording_id):
-    key = f"fathom:processed_ids:{account}"
-    return redis_client.sismember(key, str(recording_id))
+    return redis_client.sismember("fathom:processed_ids", str(recording_id))
 
 
 def mark_as_processed(account, recording_id):
-    key = f"fathom:processed_ids:{account}"
-    redis_client.sadd(key, str(recording_id))
+    redis_client.sadd("fathom:processed_ids", str(recording_id))
 
 
 def fetch_new_meetings(api_key, created_after, retries=3, backoff=10):
