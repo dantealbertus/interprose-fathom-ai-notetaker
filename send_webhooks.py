@@ -63,7 +63,7 @@ def fetch_new_meetings(api_key, created_after, retries=3, backoff=10):
                 response.raise_for_status()
                 break
             except requests.HTTPError as e:
-                if attempt < retries - 1 and response.status_code in (502, 503, 504):
+                if attempt < retries - 1 and response.status_code in (500, 502, 503, 504):
                     wait = backoff * (2 ** attempt)
                     print(f"Tijdelijke fout ({response.status_code}), opnieuw proberen in {wait}s...")
                     time.sleep(wait)
